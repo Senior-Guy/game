@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Cipher Heist</title>
+<meta name="description" content="A roguelike typing game. Hack OMNICORP, build perks, train your weakest keys.">
+<style>
+:root{color-scheme:dark;--bg:#04090b;--fg:#39ff88;--c:#22e6ff;--m:#ff3df2;--dim:#1f6b48;--r:#ff4b4b;--pan:#0a151a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body.amber{--fg:#ffb000;--c:#ffd36b;--m:#ff7a00;--dim:#7a5400}
+body.ice{--fg:#9fe8ff;--c:#6fb1ff;--m:#c7a6ff;--dim:#35607a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-monospace,Menlo,Consolas,monospace;min-height:100vh}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.2) 0 1px,transparent 1px 3px);animation:fl 5s infinite}
+@keyframes fl{0%,100%{opacity:1}50%{opacity:.8}52%{opacity:1}}
+#app{max-width:860px;margin:0 auto;padding:12px}
+#hud{border:1px solid var(--dim);background:var(--pan);padding:8px 10px;margin-bottom:12px}
+#tr{height:12px;border:1px solid var(--dim);margin-bottom:6px}
+#trb{height:100%;width:0;background:var(--c);transition:width .3s}
+#tr.hot #trb{background:var(--r);animation:p .5s infinite alternate}
+@keyframes p{to{opacity:.35}}
+.chip{border:1px solid var(--m);color:var(--m);padding:0 6px;font-size:12px;margin-right:4px;display:inline-block}
+h1,h3{margin:.3em 0;color:var(--c);letter-spacing:2px}
+.dim{opacity:.65}
+.btn{display:block;width:100%;text-align:left;margin:6px 0;padding:10px 12px;background:var(--pan);color:var(--fg);border:1px solid var(--dim);font:inherit;cursor:pointer}
+.btn:hover,.btn:focus{border-color:var(--c);color:var(--c);outline:0}
+#txt{font-size:22px;line-height:1.7;word-break:break-word;padding:14px;border:1px solid var(--dim);background:var(--pan);min-height:90px;margin:8px 0}
+#txt.bad{border-color:var(--r)}
+.ok{color:var(--c)}.cur{background:var(--fg);color:var(--bg)}#txt.bad .cur{background:var(--r)}
+#tmw{height:6px;background:var(--pan);border:1px solid var(--dim)}#tm{height:100%;width:100%;background:var(--m)}
+textarea{width:100%;height:56px;background:var(--pan);color:var(--fg);border:1px solid var(--dim);font:inherit;padding:6px}
+#ts{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--pan);border:1px solid var(--c);padding:6px 12px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:20}
+/* finger guide */
+#fg{margin:6px 0;user-select:none;font-size:14px}
+#fstrip{display:flex;gap:3px;flex-wrap:wrap;margin:4px 0;min-height:26px}
+.fp{width:24px;height:24px;display:grid;place-items:center;border-radius:4px;font-weight:700;font-size:12px;opacity:.75}
+.fp.cur{opacity:1;outline:2px solid #fff;outline-offset:1px;transform:scale(1.1);position:relative;z-index:2}
+#fhint{font-size:12px;color:var(--c);margin:2px 0 4px;min-height:16px}
+#hands{display:flex;justify-content:center;margin:2px 0 4px}
+#hands svg{height:130px;width:auto;max-width:100%;display:block}
+#hands .fngr{fill:#1a2a22;stroke:#3a6a4a;stroke-width:1.5;transition:transform .1s ease-out,fill .1s,stroke .1s,filter .1s}
+#hands .fngr.active{fill:#39ff88;stroke:#e6fff0;filter:drop-shadow(0 0 7px #39ff88);transform:translateY(-7px)}
+#hands .fngr.thumb.active{transform:translateY(-4px)}
+#hands .palm{fill:#15251d;stroke:#3a6a4a;stroke-width:1.5}
+#hands .flabel{font-size:10px;fill:#5a8a6a;font-family:monospace;text-anchor:middle}
+#keyboard{overflow-x:auto;margin:4px 0;padding:4px 0 2px;border-top:1px solid var(--dim);-webkit-overflow-scrolling:touch}
+#keyboard .kbr{display:flex;gap:2px;justify-content:center;margin:2px 0;min-width:max-content;padding:0 4px}
+#keyboard .kkey{width:22px;height:22px;display:grid;place-items:center;border-radius:3px;font-size:10px;font-weight:700;flex-shrink:0;transition:transform .1s,box-shadow .1s,filter .1s}
+#keyboard .kkey.wide{width:40px;font-size:9px}
+#keyboard .kkey.space{width:140px}
+#keyboard .kkey.active{transform:translateY(-2px) scale(1.12);box-shadow:0 0 0 2px #fff,0 0 8px currentColor;z-index:1;position:relative;filter:brightness(1.15)}
+</style></head><body>
+<div id="app"><div id="hud"><div id="tr"><div id="trb"></div></div><div id="hi"></div></div><div id="st"></div></div>
+<div id="ts"></div>
+<script>
+const $=s=>document.querySelector(s),has=p=>G&&G.perks.includes(p);
+let G=null,T=null,R=Math.random,POOL=[],AC=null,CT=[];
+const pick=a=>a[Math.floor(R()*a.length)],clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const shuf=a=>a.map(x=>[R(),x]).sort((p,q)=>p[0]-q[0]).map(x=>x[1]);
+const seed=a=>()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+let SV={};try{SV=JSON.parse(localStorage.getItem('ch')||'{}')}catch(e){}
+Object.entries({k:{},bg:{},pb:{},u:[],h:[],lb:[],b:0,aw:0,ti:'',sk:'',sn:''}).forEach(([a,b])=>SV[a]=SV[a]||b);
+if(SV.fg==null)SV.fg=1;
+const save=()=>{try{localStorage.setItem('ch',JSON.stringify(SV))}catch(e){}};
+const own=id=>SV.u.includes(id);
+function toast(s){const t=$('#ts');t.textContent=s;t.style.opacity=1;clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.opacity=0,2400)}
+function beep(f,d=.04,v=.03){try{AC=AC||new AudioContext();const o=AC.createOscillator(),g=AC.createGain();o.type=SV.sn==='mech'?'square':'sine';o.frequency.value=f;g.gain.value=v;o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+d)}catch(e){}}
+const put=h=>{$('#st').onclick=null;$('#st').innerHTML=h};
+const ui=h=>new Promise(r=>{put(h);$('#st').onclick=e=>{const b=e.target.closest('[data-v]');if(b){$('#st').onclick=null;r(b.dataset.v)}}});
+document.addEventListener('input',e=>{if(e.target&&e.target.id==='ct')CT=e.target.value.split(/\s+/).filter(Boolean).slice(0,400)});
+
+/* ---------- FINGER DATA ---------- */
+const FINGER={'`':0,'1':0,'q':0,'a':0,'z':0,
+'2':1,'w':1,'s':1,'x':1,
+'3':2,'e':2,'d':2,'c':2,
+'4':3,'5':3,'r':3,'t':3,'f':3,'g':3,'v':3,'b':3,
+'6':4,'7':4,'y':4,'u':4,'h':4,'j':4,'n':4,'m':4,
+'8':5,'i':5,'k':5,',':5,
+'9':6,'o':6,'l':6,'.':6,
+'0':7,'-':7,'=':7,'p':7,'[':7,']':7,'\\':7,';':7,"'":7,'/':7,
+' ':8};
+const FNAME=['left pinky','left ring','left middle','left index','right index','right middle','right ring','right pinky','thumb'];
+const FCOL=['#e03131','#f76707','#f59f00','#2f9e44','#1c7ed6','#7048e8','#c2255c','#e64980','#868e96'];
+const SHIFTMAP={'~':'`','!':'1','@':'2','#':'3','$':'4','%':'5','^':'6','&':'7','*':'8','(':'9',')':'0','_':'-','+':'=','{':'[','}':']','|':'\\',':':';','"':"'",'<':',','>':'.','?':'/'};
+const KB_ROWS=[
+  ['`','1','2','3','4','5','6','7','8','9','0','-','='],
+  ['q','w','e','r','t','y','u','i','o','p','[',']','\\'],
+  ['a','s','d','f','g','h','j','k','l',';',"'"],
+  ['z','x','c','v','b','n','m',',','.','/']
+];
+function keyInfo(ch){
+  if(ch==null)return null;
+  let base=ch,shift=false;
+  if(ch>='A'&&ch<='Z'){base=ch.toLowerCase();shift=true}
+  else if(SHIFTMAP[ch]){base=SHIFTMAP[ch];shift=true}
+  const f=FINGER[base];if(f===undefined)return null;
+  return {base,shift,finger:f,name:FNAME[f]};
+}
+function colText(col){const c=col.slice(1);const r=parseInt(c.slice(0,2),16),g=parseInt(c.slice(2,4),16),b=parseInt(c.slice(4,6),16);return (r*.299+g*.587+b*.114)>140?'#000':'#fff'}
+
+function renderHands(activeFinger){
+  const fa=f=>activeFinger===f?' active':'';
+  let svg='<svg viewBox="0 0 420 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">';
+  /* Left hand */
+  svg+='<rect class="palm" x="25" y="115" width="140" height="55" rx="22"/>';
+  svg+=`<rect class="fngr${fa(0)}" x="32" y="70" width="26" height="75" rx="13"/>`;
+  svg+=`<rect class="fngr${fa(1)}" x="64" y="45" width="26" height="100" rx="13"/>`;
+  svg+=`<rect class="fngr${fa(2)}" x="96" y="30" width="26" height="115" rx="13"/>`;
+  svg+=`<rect class="fngr${fa(3)}" x="128" y="50" width="26" height="95" rx="13"/>`;
+  svg+=`<rect class="fngr thumb${fa(8)}" x="160" y="125" width="40" height="26" rx="13"/>`;
+  /* Right hand */
+  svg+='<rect class="palm" x="255" y="115" width="140" height="55" rx="22"/>';
+  svg+=`<rect class="fngr${fa(4)}" x="266" y="50" width="26" height="95" rx="13"/>`;
+  svg+=`<rect class="fngr${fa(5)}" x="298" y="30" width="26" height="115" rx="13"/>`;
+  svg+=`<rect class="fngr${fa(6)}" x="330" y="45" width="26" height="100" rx="13"/>`;
+  svg+=`<rect class="fngr${fa(7)}" x="362" y="70" width="26" height="75" rx="13"/>`;
+  svg+=`<rect class="fngr thumb${fa(8)}" x="220" y="125" width="40" height="26" rx="13"/>`;
+  /* Labels */
+  svg+='<text x="45" y="192" class="flabel">L4</text>';
+  svg+='<text x="77" y="192" class="flabel">L3</text>';
+  svg+='<text x="109" y="192" class="flabel">L2</text>';
+  svg+='<text x="141" y="192" class="flabel">L1</text>';
+  svg+='<text x="279" y="192" class="flabel">R1</text>';
+  svg+='<text x="311" y="192" class="flabel">R2</text>';
+  svg+='<text x="343" y="192" class="flabel">R3</text>';
+  svg+='<text x="375" y="192" class="flabel">R4</text>';
+  svg+='</svg>';
+  return '<div id="hands">'+svg+'</div>';
+}
+
+function renderKeyboard(activeChar){
+  const info=keyInfo(activeChar);
+  const shiftNeeded=info&&info.shift;
+  let h='<div id="keyboard">';
+  for(const row of KB_ROWS){
+    h+='<div class="kbr">';
+    for(const k of row){
+      const f=FINGER[k];
+      const col=f!==undefined?FCOL[f]:'#445566';
+      const isActive=info&&info.base===k;
+      const label=/[a-z]/.test(k)?k.toUpperCase():k;
+      h+=`<span class="kkey${isActive?' active':''}" style="background:${col};color:${colText(col)}">${esc(label)}</span>`;
+    }
+    h+='</div>';
+  }
+  h+='<div class="kbr">';
+  h+=`<span class="kkey wide${shiftNeeded?' active':''}" style="background:#556677;color:#dde">Shift</span>`;
+  const spaceActive=activeChar===' ';
+  h+=`<span class="kkey space${spaceActive?' active':''}" style="background:${FCOL[8]};color:${colText(FCOL[8])}">space</span>`;
+  h+=`<span class="kkey wide${shiftNeeded?' active':''}" style="background:#556677;color:#dde">Shift</span>`;
+  h+='</div>';
+  h+='</div>';
+  return h;
+}
+
+function renderFingers(){
+  const t=T;if(!t)return;
+  const wrap=document.getElementById('fg');if(!wrap)return;
+  const hidden=has('Blindfold')&&performance.now()-t.ts>2000;
+  if(!SV.fg||hidden){
+    wrap.innerHTML=hidden?'<div class=dim style="text-align:center;font-size:12px;padding:6px">Finger guide hidden (Blindfold)</div>':'';
+    return;
+  }
+  const nextChar=t.text[t.pos];
+  const info=keyInfo(nextChar);
+  /* Finger strip */
+  let strip='<div id="fstrip">';
+  const lim=Math.min(t.text.length,t.pos+16);
+  for(let i=t.pos;i<lim;i++){
+    const c=t.text[i],ki=keyInfo(c);
+    const col=ki?FCOL[ki.finger]:'#445566';
+    const label=c===' '?'&#9251;':esc(c);
+    strip+=`<span class="fp${i===t.pos?' cur':''}" style="background:${col};color:${colText(col)}" title="${ki?esc(ki.name):''}">${label}</span>`;
+  }
+  strip+='</div>';
+  /* Hint */
+  let hint='<div id="fhint">';
+  if(info){
+    hint+=`Next: <b>${esc(nextChar===' '?'SPACE':nextChar)}</b> &rarr; ${esc(info.name)}`;
+    if(info.shift)hint+=` + ${info.finger<=3?'right':'left'} shift`;
+  }
+  hint+='</div>';
+  const activeFinger=info?info.finger:-1;
+  wrap.innerHTML=strip+hint+renderHands(activeFinger)+renderKeyboard(nextChar);
+}
+
+/* ---------- DATA ---------- */
+const W={base:"signal packet kernel router cipher buffer socket daemon proxy token vector matrix binary syntax thread stack module domain server cursor script shell patch exploit bypass uplink decrypt firewall network payload virus cache latency mainframe protocol gateway backdoor terminal override encrypt".split(" "),
+science:"enzyme genome protein ribosome neuron mitosis catalyst isotope photon quantum entropy plasma helix polymer".split(" "),
+medicine:"antibody dosage syndrome vaccine surgery diagnosis symptom insulin pathogen therapy clinical biopsy".split(" "),
+history:"empire treaty dynasty monarch republic conquest revolt colony archive siege alliance parliament".split(" "),
+slang:"vibe lowkey cap bussin slay sus ghosted flex drip yeet salty clutch grind goated banger".split(" ")};
+const LONG=["deoxyribonucleic","electroencephalography","cryptographically","uncharacteristically","institutionalization","counterintelligence","telecommunications","misappropriation"];
+const SN=[['js','for (let i = 0; i < n; i++) {'],['js','const [a, b] = arr.map(x => x * 2);'],['js','if (!user || user.id !== id) { return null; }'],['js','arr.filter(n => n % 2 === 0).length;'],['js','while (x > 0) { x >>= 1; }'],
+['py','def f(x): return [i**2 for i in range(x)]'],['py','print(f"{name}: {score:.2f}")'],['py','d = {k: v for k, v in zip(a, b)}'],
+['sql','SELECT * FROM users WHERE id = 1;'],['sql','DELETE FROM logs WHERE ts < NOW();'],['html','<div class="box"><p>Hi</p></div>'],['html','<a href="/x?a=1&b=2">go</a>']];
+const PK={"Ghost Protocol":"Typos add half the Trace","Backup Drive":"Survive one run-ending Trace hit","Quiet Keys":"Guard alerts need 5 typos, not 3","Overclock":"+3 seconds on every timer","Autofill":"First letter of each word typed for you","Burst Mode":"After 10 correct words in a row, the next 5 count double","Data Broker":"+25% credits","Insider Trading":"Shops cost less","Glass Cannon":"Double rewards, Trace rises twice as fast","All-In":"Vaults pay triple, you can't skip them","Adrenaline":"WPM above your average slows timers","Mirror Mode":"Words reversed, pays triple","Blindfold":"Text hides after 2 seconds, big bonus"};
+const NM={fw:'Firewall',pw:'Password Crack',gp:'Guard Patrol',vault:'Vault',ci:'Code Injection',shop:'Data Leak',amb:'Ambush'};
+const TR={fw:'sustained speed',pw:'numbers and symbols',gp:'reaction speed',vault:'precision',ci:'code syntax',amb:'pressure'};
+const HT={fw:'Beat the timer. Each typo costs 1 second.',pw:'A wrong key must be retyped and adds a little Trace.',gp:'Words flash one at a time. Typos and timeouts trigger alerts.',vault:'No timer. ONE typo resets the vault.',ci:'Exact syntax. Typos add Trace.',amb:'Ambush! High risk, high reward.'};
+const BASE={fw:w=>10+w*1.2,pw:()=>30,gp:()=>35,vault:()=>80,ci:()=>40,amb:()=>70};
+const UN=[['dec','Decryptor','Start tool: first word of each challenge is typed for you',30],['py','Python pack','Code Injection snippets',20],['sql','SQL pack','Code Injection snippets',20],['html','HTML pack','Code Injection snippets',20],['science','Science words','Word theme',25],['medicine','Medicine words','Word theme',25],['history','History words','Word theme',25],['slang','Slang words','Word theme',25],['amber','Amber skin','Terminal skin',15],['ice','Ice skin','Terminal skin',15],['mech','Mech keys','Keystroke sound',10],['zero','Zero Day tier','Tighter timers, 1.5x Bytes',40],['black','Black ICE tier','Much tighter timers, 2x Bytes',80]];
+
+/* ---------- ADAPTIVE STATS ---------- */
+function rec(p,c,ok,d){c=c.toLowerCase();p=p?p.toLowerCase():'';const k=SV.k[c]||(SV.k[c]={e:0,d:250,n:0}),a=2/51;k.e+=((ok?0:1)-k.e)*a;if(ok){k.d+=(d-k.d)*a;if(p){const g=SV.bg[p+c]||(SV.bg[p+c]={d,n:0});g.d+=(d-g.d)*a;g.n++}}k.n++}
+const avgD=()=>{const v=Object.values(SV.k).filter(k=>k.n>3);return v.length?v.reduce((s,k)=>s+k.d,0)/v.length:250};
+const weak=c=>{const k=SV.k[c.toLowerCase()];return k?k.e*3+k.d/avgD():1};
+const ws=w=>[...w].reduce((s,c)=>s+weak(c),0)/w.length;
+const sw=s=>[...s].filter(c=>/[^\w\s]/.test(c)).reduce((a,c)=>a+weak(c),0);
+function word(f){const c=Array.from({length:f?12:5},()=>pick(POOL));return(f||R()<.6)?c.sort((a,b)=>ws(b)-ws(a))[0]:c[0]}
+const para=(n,f)=>Array.from({length:n},()=>word(f)).join(' ');
+const tx=s=>has('Mirror Mode')?s.split(' ').map(w=>[...w].reverse().join('')).join(' '):s;
+const CS={m:"abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*?",n:"0123456789",s:"!@#$%^&*()-_=+[]{};:<>?/"};
+function rs(len,t,f){const s=CS[t];let o='';for(let i=0;i<len;i++){const c=Array.from({length:3},()=>s[Math.floor(R()*s.length)]);o+=(f||R()<.6)?c.sort((a,b)=>weak(b)-weak(a))[0]:c[0]}return o}
+
+/* ---------- HUD / TRACE ---------- */
+function hud(){const h=$('#hud');h.style.display=G?'block':'none';if(!G)return;$('#trb').style.width=G.trace+'%';$('#tr').classList.toggle('hot',G.trace>70);
+$('#hi').innerHTML=`TRACE ${Math.round(G.trace)}% &middot; &#8373;${G.cr} &middot; Floor ${G.floor}${G.ly?' L'+G.ly+'/'+G.lc:''}<br>`+G.perks.map(p=>`<span class=chip title="${PK[p]}">${p}</span>`).join('')}
+function setTr(v){if(G.m==='lab')return;G.trace=clamp(v,0,100);if(G.trace>=100){if(has('Backup Drive')&&!G.used){G.used=1;G.trace=70;toast('Backup Drive absorbed the hit')}else{G.dead=1;end(false)}}hud()}
+const addTrace=x=>{if(G.dead)return;setTr(G.trace+x*(has('Ghost Protocol')?.5:1)*(has('Glass Cannon')?2:1))};
+
+/* ---------- TYPING ENGINE ---------- */
+const wpm=()=>T&&T.t0&&performance.now()-T.t0>2000?T.pos/5/((performance.now()-T.t0)/60000):0;
+function fill(){if(!has('Autofill')||T.kind==='vault'||T.kind==='pw')return;const t=T;if(t.pos<t.text.length&&(t.pos===0||t.text[t.pos-1]===' ')&&t.text[t.pos]!==' ')t.pos++}
+function run(kind,o={}){return new Promise(res=>{
+const D=G.D*(o.s||1),f=!!o.weak;let text,time=0,show='';
+if(kind==='fw'){const n=Math.round((30+R()*30)*(o.n||1));text=tx(para(n,f));time=n*1.5/D}
+else if(kind==='pw'){const t=pick(['m','n','s']),l=t==='n'?6:10;text=[1,2,3].map(()=>rs(l,t,f)).join(' ')}
+else if(kind==='gp'){text=Array.from({length:8},()=>{let w,i=0;do w=word(f);while(w.length>7&&++i<20);return tx(w)}).join(' ')}
+else if(kind==='vault'){text=tx(pick(LONG))}
+else if(kind==='ci'){const L=['js',...['py','sql','html'].filter(own)],c=SN.filter(s=>L.includes(s[0]));text=Array.from({length:2},()=>Array.from({length:4},()=>pick(c)[1]).sort((a,b)=>sw(b)-sw(a))[0]).join(' ');time=text.length*.5/D}
+else{if(R()<.5){text=tx(para(7,f));time=7*1.3/D;show='LOCKDOWN INITIATED. Type before it seals!'}else{const s=para(3,f).replace(/ /g,'');show='Type this BACKWARDS: '+esc(s);text=[...s].reverse().join('');time=text.length*.7/D}}
+const tot=time?time+(has('Overclock')?3:0):0;
+T={text,show,time,tot,left:tot,pos:0,errs:0,typed:0,t0:0,last:0,prev:'',cw:0,wErr:0,wc:0,bl:0,alerts:0,gwt:3.5/D,wl:3.5/D,kind,res,o,alive:true,ts:performance.now(),lim:has('Quiet Keys')?5:3,gp:kind==='gp',tn:'',failed:false,_fpSig:''};
+T.abort=()=>{if(T&&T.alive)end(false,true)};
+if(G.dec&&kind!=='vault'){const i=text.indexOf(' ');T.pos=i<0?0:i+1}
+fill();
+put(`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap"><h3 style="margin:0">${o.title||NM[kind]}</h3><div style="display:flex;gap:6px"><button id="fgToggle" class="btn" style="width:auto;padding:4px 10px;margin:0">Fingers: ${SV.fg?'on':'off'}</button><button id="chBack" class="btn" style="width:auto;padding:4px 10px;margin:0">&larr; Back (Esc)</button></div></div><div class=dim>${HT[kind]}</div><div id=tmw><div id=tm></div></div><div id=txt></div><div id=fg></div><div id=info class=dim></div>`);
+const bb=document.getElementById('chBack');if(bb)bb.onclick=()=>{bb.blur();if(T&&T.abort)T.abort()};
+const fg=document.getElementById('fgToggle');if(fg)fg.onclick=()=>{fg.blur();SV.fg=SV.fg?0:1;save();fg.textContent='Fingers: '+(SV.fg?'on':'off');if(T){T._fpSig='';draw()}};
+draw()})}
+function draw(){const t=T;if(!t)return;let s=0,e=t.text.length;if(t.gp){s=t.text.lastIndexOf(' ',t.pos-1)+1;e=t.text.indexOf(' ',s);if(e<0)e=t.text.length}
+const hide=has('Blindfold')&&performance.now()-t.ts>2000;let h=t.show?`<div class=dim style="font-size:14px">${t.show}</div>`:'';
+for(let i=s;i<e;i++){let c=t.text[i];const cls=i<t.pos?'ok':i===t.pos?'cur':'';if(i>=t.pos&&hide&&c!==' ')c='&bull;';else c=c.replace(/&/g,'&amp;').replace(/</g,'&lt;');h+=`<span class="${cls}">${c===' '?'&nbsp;':c}</span>`}
+$('#txt').innerHTML=h;const w=t.gp?t.wl/t.gwt:t.tot?t.left/t.tot:1;$('#tm').style.width=clamp(w*100,0,100)+'%';
+$('#info').textContent=`${Math.round(wpm())} WPM | combo ${G.cs} | typos ${t.errs}${t.gp?` | alerts ${t.alerts}/${t.lim}`:''}${t.bl?` | BURST x2 (${t.bl})`:''}${t.failed?' | FAILED — keep typing to finish':''}${t.time&&!t.t0?' | timer starts on first key':''} ${t.tn}`;
+const sig=t.pos+'|'+SV.fg+'|'+(hide?1:0)+'|'+t.text.length;if(t._fpSig!==sig){t._fpSig=sig;renderFingers()}}
+function alarm(){T.alerts++;beep(120,.15,.05);if(T.alerts>=T.lim){T.failed=true;T.tn='| ALERT LIMIT — finish the text';addTrace(20)}}
+function wdone(){const t=T;if(t.wErr)t.cw=0;else if(has('Burst Mode')&&++t.cw>=10){t.cw=0;t.bl=5}t.wErr=0;t.wc+=t.bl>0?2:1;if(t.bl>0)t.bl--}
+function hit(k){const t=T,now=performance.now();if(!t.t0)t.t0=now;const w=t.text[t.pos],ok=k===w,d=t.last?Math.min(now-t.last,2000):250;t.last=now;t.typed++;G.typed++;rec(t.prev,w,ok,d);
+if(ok){t.prev=w;t.pos++;G.cs++;G.bs=Math.max(G.bs,G.cs);beep(300+Math.min(G.cs,50)*8);if(w===' '||t.pos>=t.text.length)wdone();if(t.gp&&w===' ')t.wl=t.gwt;if(t.pos<t.text.length)fill()}
+else{t.errs++;G.errs++;t.wErr=1;t.prev='';G.cs=0;beep(90,.1,.05);const x=$('#txt');x.classList.add('bad');setTimeout(()=>x.classList.remove('bad'),130);
+if(t.kind==='vault'){t.pos=0;t.prev=''}
+else if(!t.failed){
+switch(t.kind){case'fw':t.left=Math.max(0,t.left-1);if(t.left<=0){t.left=0;t.failed=true;t.tn='| TIME EXPIRED — finish the text'}break;case'pw':case'ci':case'amb':addTrace(1);break;case'gp':alarm();break;}
+if(t.o.taunt)t.tn=`| CORE AI: you typed "${k}", wanted "${w}". Again.`}
+}
+if(!t.alive)return;if(t.pos>=t.text.length)end(true);else draw()}
+function end(ok,aborted=false){const t=T;if(!t||!t.alive)return;t.alive=false;const m=t.t0?(performance.now()-t.t0)/60000:1;t.res({ok:!!ok&&!t.failed,done:t.pos>=t.text.length,aborted,wpm:Math.round(t.pos/5/m),acc:t.pos/((t.pos+t.errs)||1),errs:t.errs,wc:t.wc});if(aborted&&G)G.aborted=1;}
+addEventListener('keydown',e=>{
+if(e.key==='Escape'&&T&&T.alive){e.preventDefault();if(T.abort)T.abort();return}
+if(!T||!T.alive||e.ctrlKey||e.metaKey||e.altKey||e.key.length!==1)return;e.preventDefault();if(!e.repeat)hit(e.key)
+});
+setInterval(()=>{const t=T;if(!t||!t.alive)return;if(G&&G.trace>70&&Math.random()<.06)beep(200,.08,.02);
+if(t.time&&t.t0&&!t.failed){t.left-=.1*((has('Adrenaline')&&wpm()>(SV.aw||40))?.7:1);if(t.left<=0){t.left=0;t.failed=true;t.tn='| TIME EXPIRED — finish the text';beep(80,.2,.05)}}
+if(t.gp&&t.t0&&!t.failed){t.wl-=.1;if(t.wl<=0){t.wl=t.gwt;alarm();if(t.alive&&!t.failed){const n=t.text.indexOf(' ',t.pos);if(n>=0)t.pos=n+1}}}
+if(t.alive)draw()},100);
+
+/* ---------- RUN FLOW ---------- */
+const mult=()=>(has('Data Broker')?1.25:1)*(has('Glass Cannon')?2:1)*(has('Mirror Mode')?3:1)*(has('Blindfold')?2:1);
+function settle(kind,r){let msg='';
+if(r.ok){const c=Math.round((BASE[kind](r.wpm)+r.wc*.5)*mult()*(kind==='vault'&&has('All-In')?3:1));G.cr+=c;G.nodes++;msg=`+${c} credits`;if(!r.errs){setTr(G.trace-5);msg+=', clean run (-5 Trace)'}}
+else{addTrace(kind==='amb'?25:15);msg='Trace rising.';if(G.perks.length&&R()<.5){const p=pick(G.perks);G.perks=G.perks.filter(x=>x!==p);msg+=` Lost perk: ${p}.`}}
+if(r.done&&r.wpm>5){SV.aw=Math.round((SV.aw||r.wpm)*.8+r.wpm*.2);const best=SV.pb[kind]||0;if(r.wpm>best){SV.pb[kind]=r.wpm;msg+=` &middot; NEW BEST! (was ${best||'--'} WPM)`}else{msg+=` &middot; best ${best} WPM`}}
+G.wp.push({k:NM[kind],w:r.wpm,ok:r.ok});
+if(r.acc>.95)G.D=Math.min(G.D*1.05,2);else if(r.acc<.85)G.D=Math.max(G.D*.95,.6);
+hud();save();return msg}
+const resScr=(kind,r,msg)=>ui(`<h3>${NM[kind]}: ${r.ok?'CLEARED':'FAILED'}</h3><p>${r.wpm} WPM &middot; ${Math.round(r.acc*100)}% accuracy<br>${msg}<br><span class=dim>Personal best (${NM[kind]}): ${SV.pb[kind]||'--'} WPM</span></p><button class=btn data-v=1>Continue</button>`);
+async function perkPick(t){const a=shuf(Object.keys(PK).filter(p=>!G.perks.includes(p))).slice(0,3);if(!a.length)return;const v=await ui(`<h3>${t||'Choose a perk'}</h3>`+a.map(p=>`<button class=btn data-v="${p}"><b>${p}</b><br><span class=dim>${PK[p]}</span></button>`).join(''));G.perks.push(v);hud()}
+async function shop(){const k=has('Insider Trading')?.6:1,a=Math.round(40*k),b=Math.round(60*k),c=Math.round(45*k);
+for(;;){const v=await ui(`<h3>Data Leak</h3><p class=dim>No typing here. Credits: ${G.cr}</p><button class=btn data-v=tr>Reroute: -20 Trace (${a})</button><button class=btn data-v=pk>Buy a perk (${b})</button><button class=btn data-v=rr>Node reroll token (${c}), you have ${G.rr}</button><button class=btn data-v=x>Leave</button>`);
+if(v==='x')return;if(v==='tr'&&G.cr>=a){G.cr-=a;setTr(G.trace-20)}else if(v==='pk'&&G.cr>=b){G.cr-=b;await perkPick('Shop stock')}else if(v==='rr'&&G.cr>=c){G.cr-=c;G.rr++}else toast('Not enough credits');hud()}}
+async function pickNode(){const roll=()=>{const a=[...new Set(shuf(['fw','fw','pw','gp','vault','ci','amb','shop']))].slice(0,R()<.4?3:2);if(a.every(x=>x==='shop'))a[0]='fw';return a};let opts=roll();
+for(;;){let o=has('All-In')&&opts.includes('vault')?['vault']:opts;
+const v=await ui(`<h3>Network map: Floor ${G.floor}, layer ${G.ly}/${G.lc}</h3><div class=dim>Pick your next node. You see its type first.</div>`+o.map(x=>`<button class=btn data-v=${x}><b>${NM[x]}</b> <span class=dim>${x==='shop'?'rest and shop':'trains '+TR[x]}</span></button>`).join('')+(G.rr>0?`<button class=btn data-v=rr>Reroll nodes (${G.rr} left)</button>`:''));
+if(v==='rr'){G.rr--;opts=roll();continue}return v}}
+async function boss(f){const nm=['The Sentinel','The Auditor','The Core AI'][(f-1)%3],i=(f-1)%3;
+const ds=['Multi-stage firewall: three paragraphs back to back, harder each time.','A gauntlet of every node type. No breaks.','It adapts to you, targets your weakest keys and taunts your mistakes.'][i];
+await ui(`<h3>BOSS: ${nm}</h3><p>${ds}</p><button class=btn data-v=1>Engage</button>`);
+const S=[[['fw',{n:.6,s:1}],['fw',{n:.8,s:1.15}],['fw',{n:1,s:1.3}]],[['fw',{n:.4}],['pw'],['gp'],['ci'],['amb'],['vault']],[['fw',{n:.6,weak:1,taunt:1}],['pw',{weak:1,taunt:1}],['ci',{taunt:1}],['vault',{taunt:1}]]][i];
+const out=[];for(const[k,o]of S){const r=await run(k,{...(o||{}),title:`BOSS ${nm}: ${NM[k]}`});if(G.aborted)return;const m=settle(k,r);out.push(`${NM[k]}: ${r.ok?'cleared':'failed'}`);if(G.dead)return}
+await ui(`<h3>${nm} ${out.some(x=>x.includes('failed'))?'survived the assault':'defeated'}</h3><p>${out.join('<br>')}</p><button class=btn data-v=1>Continue</button>`);if(G.dead)return;if(G.m==='endless'||f<3)await perkPick('Boss loot')}
+async function lab(){for(;;){const v=await ui(`<h3>Practice Lab</h3><p class=dim>No Trace. Drill one node type.</p>`+['fw','pw','gp','vault','ci','amb'].map(x=>`<button class=btn data-v=${x}>${NM[x]} <span class=dim>best ${SV.pb[x]||'--'} WPM</span></button>`).join('')+`<button class=btn data-v=x>Back</button>`);if(v==='x')return;const r=await run(v);if(G.aborted)return;await resScr(v,r,settle(v,r))}}
+async function play(m){
+const tb=SV.ti==='black'?1.3:SV.ti==='zero'?1.15:1;
+G={m,trace:0,cr:0,perks:[],D:tb,floor:1,ly:0,lc:0,used:0,rr:0,nodes:0,cs:0,bs:0,errs:0,typed:0,wp:[],dead:0,dec:own('dec'),win:0,aborted:0};
+R=m==='daily'?seed(+new Date().toISOString().slice(0,10).replace(/-/g,'')):Math.random;
+POOL=m==='custom'&&CT.length>2?CT:[...W.base,...['science','medicine','history','slang'].filter(own).flatMap(k=>W[k])];
+hud();if(m==='lab'){await lab();return}
+await perkPick('Loadout: choose a starting perk');
+for(let f=1;m==='endless'||f<=3;f++){G.floor=f;if(m==='endless')G.D=Math.min(G.D*1.06,2.2);G.lc=5+Math.floor(R()*3);
+for(G.ly=1;G.ly<=G.lc;G.ly++){hud();const k=await pickNode();if(k==='shop'){await shop();if(G.aborted)return;continue}
+const r=await run(k);if(G.aborted)return;if(G.dead)break;const msg=settle(k,r);await resScr(k,r,msg);if(G.dead)break;if(r.ok)await perkPick()}
+if(G.dead)break;G.ly=0;await boss(f);if(G.aborted)return;if(G.dead)break;if(m!=='endless'&&f===3)G.win=1}
+await report()}
+async function report(){T=null;const ws_=G.wp.map(x=>x.w).filter(x=>x>0),avg=ws_.length?ws_.reduce((a,b)=>a+b)/ws_.length:0,acc=G.typed?(G.typed-G.errs)/G.typed:1,net=Math.round(avg*acc);
+const by=Math.round((Math.floor(G.cr*.2)+G.nodes*3+(G.win?50:0)+G.floor*10)*(SV.ti==='black'?2:SV.ti==='zero'?1.5:1));SV.b+=by;
+const sr=[...G.wp].sort((a,b)=>b.w-a.w),pc=G.perks;
+const rows=['1234567890','qwertyuiop','asdfghjkl','zxcvbnm'];
+const hm=rows.map(r=>`<div style="display:flex;gap:4px;justify-content:center;margin:4px 0">${[...r].map(c=>{const k=SV.k[c],bg=k&&k.n>2?`hsl(${clamp(120-(weak(c)-.9)*90,0,120)} 80% 50%)`:'#667';return`<span style="width:28px;height:28px;display:grid;place-items:center;border-radius:3px;color:#000;font-weight:700;background:${bg}">${c}</span>`}).join('')}</div>`).join('');
+const bg=Object.entries(SV.bg).filter(e=>e[1].n>=3).sort((a,b)=>b[1].d-a[1].d).slice(0,5).map(e=>`${e[0]} ${Math.round(e[1].d)}ms`).join(', ')||'not enough data yet';
+const wk=Object.entries(SV.k).filter(e=>e[1].n>5).sort((a,b)=>weak(b[0])-weak(a[0]))[0];
+const focus=!wk?'play more to build your profile':/\d/.test(wk[0])?'the number row':/[a-z]/.test(wk[0])?`the "${wk[0]}" key`:'symbol keys';
+const sc=Math.round(net*10+G.cr+G.nodes*5);SV.h.push({w:net,a:Math.round(acc*100)});SV.h=SV.h.slice(-10);
+if(G.m==='daily'){SV.lb.push({d:new Date().toISOString().slice(0,10),s:sc});SV.lb=SV.lb.sort((a,b)=>b.s-a.s).slice(0,5)}save();
+const suf=[['Safety','Turtle'],['Speed','Speedrunner'],['Economy','Broker'],['Risk','Gambler'],['Weird','Wildcard']];
+const cat=p=>['Ghost Protocol','Backup Drive','Quiet Keys'].includes(p)?0:['Overclock','Autofill','Burst Mode'].includes(p)?1:['Data Broker','Insider Trading'].includes(p)?2:['Glass Cannon','All-In','Adrenaline'].includes(p)?3:4;
+const cn=[0,0,0,0,0];pc.forEach(p=>cn[cat(p)]++);const bn=(pc.includes('Glass Cannon')?'Glass Cannon':pc[0]||'Stock')+' '+suf[cn.indexOf(Math.max(...cn))][1];
+await ui(`<h1>${G.win?'HEIST COMPLETE':'TRACED'}</h1><p>${G.m==='endless'?`Reached floor ${G.floor}. `:''}Bytes earned: <b>${by}</b> (total ${SV.b})</p>
+<p>Net WPM <b>${net}</b> &middot; Accuracy <b>${Math.round(acc*100)}%</b> &middot; Longest clean streak <b>${G.bs}</b> chars<br>
+Fastest node: ${sr[0]?sr[0].k+' ('+sr[0].w+' WPM)':'--'} &middot; Slowest: ${sr.length?sr[sr.length-1].k+' ('+sr[sr.length-1].w+' WPM)':'--'}<br>
+Build: <b>${bn}</b><br>Perks: ${pc.join(', ')||'none'}${G.m==='daily'?`<br>Daily score ${sc}. Your top scores: ${SV.lb.map(x=>x.s).join(', ')}`:''}</p>
+<h3>Keyboard heatmap</h3>${hm}<p class=dim>Green is strong, red is weak, grey is not enough data.</p>
+<p>Slowest bigrams: ${bg}<br>Last runs (WPM / accuracy): ${SV.h.map(h=>h.w+'/'+h.a+'%').join('  ')}<br><b>Focus next: ${focus}</b></p>
+<button class=btn data-v=1>Back to menu</button>`)}
+
+/* ---------- MENU / BYTES SHOP ---------- */
+async function meta(){for(;;){const v=await ui(`<h3>Bytes Shop</h3><p>Bytes: ${SV.b}</p>`+UN.map(u=>{const o=own(u[0]),eq=SV.sk===u[0]||(u[0]==='mech'&&SV.sn==='mech'),cos=['amber','ice','mech'].includes(u[0]);return`<button class=btn data-v=${u[0]}><b>${u[1]}</b> <span class=dim>${u[2]} &middot; ${o?(cos?(eq?'equipped (click to remove)':'click to equip'):'owned'):u[3]+' Bytes'}</span></button>`}).join('')+`<button class=btn data-v=x>Back</button>`);
+if(v==='x')return;const u=UN.find(x=>x[0]===v);
+if(!own(v)){if(SV.b>=u[3]){SV.b-=u[3];SV.u.push(v)}else toast('Not enough Bytes')}
+else if(v==='mech')SV.sn=SV.sn==='mech'?'':'mech';else if(v==='amber'||v==='ice')SV.sk=SV.sk===v?'':v;else toast('Already owned');
+document.body.className=SV.sk||'';save()}}
+async function menu(){G=null;T=null;hud();document.body.className=SV.sk||'';
+const tiers=['',...['zero','black'].filter(own)],tn={'':'Normal',zero:'Zero Day',black:'Black ICE'};
+const v=await ui(`<h1>CIPHER HEIST</h1><p class=dim>You are a hacker inside OMNICORP. Every obstacle is a typing challenge. Pick routes, stack perks, keep your Trace under 100%. Desktop keyboard required.</p>
+<button class=btn data-v=std><b>Standard Run</b> <span class=dim>3 floors, 3 bosses</span></button>
+<button class=btn data-v=daily><b>Daily Heist</b> <span class=dim>same seed for everyone today, local leaderboard</span></button>
+<button class=btn data-v=endless><b>Endless Network</b> <span class=dim>infinite floors</span></button>
+<button class=btn data-v=lab><b>Practice Lab</b> <span class=dim>drill a node, no Trace</span></button>
+<button class=btn data-v=custom><b>Custom Text Mode</b> <span class=dim>your text becomes the word pool</span></button>
+<textarea id=ct placeholder="Paste notes or code here for Custom Text Mode" spellcheck="false" autocomplete="off" autocapitalize="off">${esc(CT.join(' '))}</textarea>
+<button class=btn data-v=meta><b>Bytes Shop</b> <span class=dim>${SV.b} Bytes</span></button>
+${tiers.length>1?`<button class=btn data-v=tier><b>Difficulty tier</b> <span class=dim>${tn[SV.ti||'']||'Normal'} (click to change)</span></button>`:''}`);
+if(v==='custom')CT=($('#ct').value.match(/\S+/g)||[]).slice(0,400);
+if(v==='meta'){await meta();return menu()}
+if(v==='tier'){SV.ti=tiers[(tiers.indexOf(SV.ti||'')+1)%tiers.length];save();return menu()}
+return v}
+(async()=>{for(;;)await play(await menu())})();
+</script></body></html>
